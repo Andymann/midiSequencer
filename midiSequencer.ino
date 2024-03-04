@@ -8,10 +8,11 @@
 
 #define LEDDIMM 4      
 
+#define TIMINGOFFSETMS -100
 #define PPQN 24
-#define  SMOOTHED_SAMPLE_SIZE  24
+#define SMOOTHED_SAMPLE_SIZE  24
 #define BEATRESOLUTION 4
-#define SEQUENCERSTEPS 8 // 16 LEDs, 4 Banks
+#define SEQUENCERSTEPS 8
 #define DISPLAYABLE_STEPS 16
 #define DISPLAYABLE_BANKS 4
 //uint8_t iSequencerStepIndex = 0;
@@ -61,6 +62,9 @@ void setup() {
   testPixels();
   Serial.begin(9600);
   while (!Serial) ;
+  preloadPattern();
+  presetClockSpeed(120);
+  Serial.println("set BPM:" + String( calculateBPM(averageTimediff())));
   Serial.println("Initialization done");
 }
 
@@ -85,7 +89,7 @@ void loop() {
 
       // Downbeat
       if(ppqnCounter == PPQN){
-        //Serial.println("BPM:" + String( calculateBPM(averageTimediff())));
+        Serial.println("BPM:" + String( calculateBPM(averageTimediff())));
         ppqnCounter = 0 ;
       };
 
@@ -114,7 +118,7 @@ void loop() {
     }
 
    else if((rx.byte1 >= 0x90) && (rx.byte1 < 0x9F)){
-      Serial.println("Note ON: " + String(rx.byte2) + " " + String(rx.byte3));
+      //Serial.println("Note ON: " + String(rx.byte2) + " " + String(rx.byte3));
       if(iMode==MODE_RECORD){
         recordStep_Note(rx);
       }
@@ -144,11 +148,17 @@ float calculateBPM(unsigned long pTimeDiff){
   return fBPM;
 }
 
+long calculateTimediffMS(int pBPM){
+  long timeDiff = 60000000/pBPM/PPQN;
+  Serial.println("TimeDiff(" + String(pBPM) + "):" + String(timeDiff));
+  return long(timeDiff);
+}
+
 void processSequencerStep(int pStepIndex){
   displaySequencerStep(pStepIndex);
   if(sequencerStep[pStepIndex].bHasData){
     if(sequencerStep[pStepIndex].pitch!=-1){
-      Serial.println("OUTPUT");
+      //Serial.println("OUTPUT");
       noteOn(sequencerStep[pStepIndex].channel, sequencerStep[pStepIndex].pitch, sequencerStep[pStepIndex].velocity);
       
     }
@@ -221,4 +231,26 @@ void noteOff(byte channel, byte pitch, byte velocity) {
   midiEventPacket_t noteOff = {0x08, 0x80 | channel, pitch, velocity};
   MidiUSB.sendMIDI(noteOff);
   MidiUSB.flush();
+}
+
+
+/*
+  Plant testdata
+*/
+void preloadPattern(){
+  sequencerStep[0].channel = 0;
+  sequencerStep[0].bHasData = true;
+  sequencerStep[0].pitch = 0x24;
+  sequencerStep[0].velocity = 0x64;
+
+  sequencerStep[4].channel = 0;
+  sequencerStep[4].bHasData = true;
+  sequencerStep[4].pitch = 0x24;
+  sequencerStep[4].velocity = 0x64;
+}
+
+void presetClockSpeed(int pBPM){
+  for(uint8_t i=0; i<SMOOTHED_SAMPLE_SIZE; i++){
+    averageTimediff += calculateTimediffMS(pBPM);
+  }
 }
