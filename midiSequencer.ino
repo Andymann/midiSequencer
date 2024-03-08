@@ -1,6 +1,7 @@
 /*
   MIDI clock receiver
   Arduino Leonardo
+  https://liveelectronics.musinou.net/MIDIdeviceName.php
  */
 #include <Smooth.h>
 #include "MIDIUSB.h"
@@ -20,9 +21,12 @@
 #define LEDPIN 2
 #define NUMPIXELS 20
 
+
 #define MODE_PLAY 1
 #define MODE_RECORD 2
 uint8_t iMode = MODE_RECORD;
+
+bool bIsPlaying = false;
 
 /*
 typedef struct{
@@ -58,13 +62,13 @@ uint8_t iStepIndex = 0; //
 
 
 void setup() {
-  pixels.begin(); // INITIALIZE NeoPixel strip object (REQUIRED)
+  pixels.begin();
   testPixels();
   Serial.begin(9600);
   while (!Serial) ;
   preloadPattern();
   presetClockSpeed(120);
-  Serial.println("set BPM:" + String( calculateBPM(averageTimediff())));
+  Serial.println("set BPM:" + String( calculateBPM() ));
   Serial.println("Initialization done");
 }
 
@@ -76,6 +80,7 @@ void loop() {
     rx = MidiUSB.read();
     //Count pulses and send note 
     if(rx.byte1 == 0xF8){
+
       unsigned long currentMicros = micros();
       unsigned long tmpTimeDiff = currentMicros - previousMicros;
       if(tmpTimeDiff>3000){
@@ -83,15 +88,16 @@ void loop() {
       }else if(tmpTimeDiff<150){
         tmpTimeDiff=150;  // 400 BPM
       }
-      ++ppqnCounter; 
+      
       averageTimediff += currentMicros - previousMicros; // Turned out to be more precise than avaraging calculated BPMs
       previousMicros = currentMicros;
+      ++ppqnCounter;
 
-      // Downbeat
-      if(ppqnCounter == PPQN){
-        Serial.println("BPM:" + String( calculateBPM(averageTimediff())));
+      if(ppqnCounter == PPQN){  // Downbeat
+        Serial.println("BPM:" + String( calculateBPM() ));
         ppqnCounter = 0 ;
       };
+      
 
       // Dpending on sequencer's resolution
       if(ppqnCounter%(PPQN*4/BEATRESOLUTION)==0){
@@ -109,10 +115,12 @@ void loop() {
     else if(rx.byte1 == 0xFA){
       ppqnCounter = PPQN-1; // Next TICK will trigger a downbeat
       iStepIndex = -1;
+      bIsPlaying = true;
     }
 
     //Clock stop byte
     else if(rx.byte1 == 0xFC){
+      bIsPlaying = false;
       ppqnCounter = 0;
       setPixelsOff();
     }
@@ -143,7 +151,7 @@ void recordStep_Note(midiEventPacket_t pRX){
   sequencerStep[iStepIndex].velocity = pRX.byte3;
 }
 
-float calculateBPM(unsigned long pTimeDiff){
+float calculateBPM(){
   float fBPM = 60000000/averageTimediff()/PPQN;
   return fBPM;
 }
@@ -155,12 +163,13 @@ long calculateTimediffMS(int pBPM){
 }
 
 void processSequencerStep(int pStepIndex){
-  displaySequencerStep(pStepIndex);
-  if(sequencerStep[pStepIndex].bHasData){
-    if(sequencerStep[pStepIndex].pitch!=-1){
-      //Serial.println("OUTPUT");
-      noteOn(sequencerStep[pStepIndex].channel, sequencerStep[pStepIndex].pitch, sequencerStep[pStepIndex].velocity);
-      
+  if(bIsPlaying==true){
+    displaySequencerStep(pStepIndex);
+    if(sequencerStep[pStepIndex].bHasData){
+      if(sequencerStep[pStepIndex].pitch!=-1){
+        //Serial.println("OUTPUT");
+        noteOn(sequencerStep[pStepIndex].channel, sequencerStep[pStepIndex].pitch, sequencerStep[pStepIndex].velocity);
+      }
     }
   }
 }
